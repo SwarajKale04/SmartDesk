@@ -1,13 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using SmartDesk.Application.Common;
 using SmartDesk.Application.Tickets;
+using SmartDesk.Application.Sla;
 using SmartDesk.Domain.Entities;
 using SmartDesk.Domain.Enums;
 using SmartDesk.Infrastructure.Persistence;
 
 namespace SmartDesk.Infrastructure.Tickets;
 
-public sealed class TicketService(SmartDeskDbContext dbContext) : ITicketService
+public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationService slaCalculationService) : ITicketService
 {
     public async Task<TicketDto> CreateAsync(CreateTicketRequest request, CurrentUser currentUser, CancellationToken cancellationToken = default)
     {
@@ -15,6 +16,12 @@ public sealed class TicketService(SmartDeskDbContext dbContext) : ITicketService
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description)) throw new ValidationException("Title and description are required.");
         if (request.Title.Length > 250 || request.Description.Length > 8000) throw new ValidationException("Ticket content exceeds the allowed length.");
         var ticket = Ticket.Create(await CreateNumberAsync(cancellationToken), request.Title, request.Description, currentUser.Id, request.Priority);
+        var sla = await slaCalculationService.CalculateAsync(ticket.Priority, ticket.CreatedAt, cancellationToken);
+        if (sla is not null)
+        {
+            ticket.ApplySla(sla.PolicyId, sla.FirstResponseDueAt, sla.ResolutionDueAt);
+            dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "SlaApplied", null, ticket.DueAt?.ToString("O")));
+        }
         dbContext.Tickets.Add(ticket);
         dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "TicketCreated", null, ticket.Status.ToString()));
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -62,6 +69,15 @@ public sealed class TicketService(SmartDeskDbContext dbContext) : ITicketService
         try { ticket.ChangeStatus(request.Status, DateTimeOffset.UtcNow); }
         catch (InvalidOperationException exception) { throw new ValidationException(exception.Message); }
         dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "StatusChanged", previous.ToString(), request.Status.ToString()));
+        if (request.Status == TicketStatus.Reopened)
+        {
+            var reopenedSla = await slaCalculationService.CalculateAsync(ticket.Priority, DateTimeOffset.UtcNow, cancellationToken);
+            if (reopenedSla is not null)
+            {
+                ticket.ApplySla(reopenedSla.PolicyId, reopenedSla.FirstResponseDueAt, reopenedSla.ResolutionDueAt);
+                dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "SlaReapplied"));
+            }
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
         return Map(ticket);
     }
@@ -106,6 +122,8 @@ public sealed class TicketService(SmartDeskDbContext dbContext) : ITicketService
         if (string.IsNullOrWhiteSpace(request.Content) || request.Content.Length > 8000) throw new ValidationException("Comment content is required and must not exceed 8000 characters.");
         var comment = TicketComment.Create(ticketId, currentUser.Id, request.Content, request.IsInternal);
         dbContext.TicketComments.Add(comment);
+        if (currentUser.Role == UserRole.Agent && !request.IsInternal && ticket.RegisterFirstResponse(DateTimeOffset.UtcNow))
+            dbContext.TicketHistories.Add(TicketHistory.Create(ticketId, currentUser.Id, "FirstResponseRecorded"));
         dbContext.TicketHistories.Add(TicketHistory.Create(ticketId, currentUser.Id, "CommentAdded", null, request.IsInternal ? "Internal" : "Public"));
         await dbContext.SaveChangesAsync(cancellationToken);
         return new TicketCommentDto(comment.Id, comment.UserId, comment.Content, comment.IsInternal, comment.CreatedAt);

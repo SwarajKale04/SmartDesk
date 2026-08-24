@@ -41,6 +41,7 @@ public sealed class Ticket : Entity
     public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; private set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? FirstResponseAt { get; private set; }
+    public DateTimeOffset? FirstResponseDueAt { get; private set; }
     public DateTimeOffset? DueAt { get; private set; }
     public DateTimeOffset? ResolvedAt { get; private set; }
     public DateTimeOffset? ClosedAt { get; private set; }
@@ -59,9 +60,9 @@ public sealed class Ticket : Entity
         if (!IsValidTransition(Status, status)) throw new InvalidOperationException($"Cannot change ticket status from {Status} to {status}.");
         Status = status;
         UpdatedAt = now;
-        if (status == TicketStatus.Resolved) ResolvedAt = now;
+        if (status == TicketStatus.Resolved) { ResolvedAt = now; SlaStatus = SlaStatus.Completed; }
         if (status == TicketStatus.Closed) ClosedAt = now;
-        if (status == TicketStatus.Reopened) { ResolvedAt = null; ClosedAt = null; }
+        if (status == TicketStatus.Reopened) { ResolvedAt = null; ClosedAt = null; SlaStatus = SlaStatus.OnTrack; }
     }
 
     public void AssignTo(Guid agentId, DateTimeOffset now)
@@ -82,6 +83,29 @@ public sealed class Ticket : Entity
         UpdatedAt = now;
     }
 
+    public void ApplySla(Guid slaId, DateTimeOffset firstResponseDueAt, DateTimeOffset dueAt)
+    {
+        SlaId = slaId;
+        FirstResponseDueAt = firstResponseDueAt;
+        DueAt = dueAt;
+        SlaStatus = SlaStatus.OnTrack;
+    }
+
+    public bool RegisterFirstResponse(DateTimeOffset now)
+    {
+        if (FirstResponseAt is not null) return false;
+        FirstResponseAt = now;
+        UpdatedAt = now;
+        return true;
+    }
+
+    public bool UpdateSlaStatus(SlaStatus slaStatus)
+    {
+        if (SlaStatus == slaStatus) return false;
+        SlaStatus = slaStatus;
+        return true;
+    }
+
     private static bool IsValidTransition(TicketStatus from, TicketStatus to) => (from, to) switch
     {
         (TicketStatus.New, TicketStatus.Open) => true,
@@ -100,5 +124,5 @@ public sealed class Ticket : Entity
 public sealed class TicketComment : Entity { public Guid TicketId { get; private set; } public Guid UserId { get; private set; } public string Content { get; private set; } = string.Empty; public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public bool IsInternal { get; private set; } public static TicketComment Create(Guid ticketId, Guid userId, string content, bool isInternal) => string.IsNullOrWhiteSpace(content) ? throw new ArgumentException("Comment content is required.", nameof(content)) : new TicketComment { TicketId = ticketId, UserId = userId, Content = content.Trim(), IsInternal = isInternal }; }
 public sealed class TicketHistory : Entity { public Guid TicketId { get; private set; } public Guid? UserId { get; private set; } public string Action { get; private set; } = string.Empty; public string? OldValue { get; private set; } public string? NewValue { get; private set; } public DateTimeOffset Timestamp { get; private set; } = DateTimeOffset.UtcNow; public static TicketHistory Create(Guid ticketId, Guid? userId, string action, string? oldValue = null, string? newValue = null) => new() { TicketId = ticketId, UserId = userId, Action = action, OldValue = oldValue, NewValue = newValue }; }
 public sealed class Category : Entity { public string Name { get; private set; } = string.Empty; public string? Description { get; private set; } public bool IsActive { get; private set; } = true; }
-public sealed class SlaPolicy : Entity { public string Name { get; private set; } = string.Empty; public TicketPriority Priority { get; private set; } public int ResponseTimeMinutes { get; private set; } public int ResolutionTimeMinutes { get; private set; } public bool IsActive { get; private set; } = true; }
-public sealed class Notification : Entity { public Guid UserId { get; private set; } public string Type { get; private set; } = string.Empty; public string Message { get; private set; } = string.Empty; public Guid? RelatedTicketId { get; private set; } public bool IsRead { get; private set; } public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; }
+public sealed class SlaPolicy : Entity { public string Name { get; private set; } = string.Empty; public TicketPriority Priority { get; private set; } public int ResponseTimeMinutes { get; private set; } public int ResolutionTimeMinutes { get; private set; } public bool IsActive { get; private set; } = true; public static SlaPolicy Create(string name, TicketPriority priority, int responseTimeMinutes, int resolutionTimeMinutes) => responseTimeMinutes <= 0 || resolutionTimeMinutes <= 0 ? throw new ArgumentOutOfRangeException(nameof(responseTimeMinutes), "SLA time limits must be positive.") : new SlaPolicy { Name = name, Priority = priority, ResponseTimeMinutes = responseTimeMinutes, ResolutionTimeMinutes = resolutionTimeMinutes }; }
+public sealed class Notification : Entity { public Guid UserId { get; private set; } public string Type { get; private set; } = string.Empty; public string Message { get; private set; } = string.Empty; public Guid? RelatedTicketId { get; private set; } public bool IsRead { get; private set; } public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public static Notification Create(Guid userId, string type, string message, Guid? relatedTicketId = null) => new() { UserId = userId, Type = type, Message = message, RelatedTicketId = relatedTicketId }; }

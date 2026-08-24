@@ -259,3 +259,37 @@ GO
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260824105605_AddSlaDeadlines'
+)
+BEGIN
+    ALTER TABLE [Tickets] ADD [FirstResponseDueAt] datetimeoffset NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260824105605_AddSlaDeadlines'
+)
+BEGIN
+    CREATE INDEX [IX_Tickets_DueAt] ON [Tickets] ([DueAt]);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260824105605_AddSlaDeadlines'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260824105605_AddSlaDeadlines', N'8.0.19');
+END;
+GO
+
+COMMIT;
+GO
+

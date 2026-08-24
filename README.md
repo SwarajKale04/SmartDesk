@@ -26,3 +26,7 @@ When a database connection and `Seed__DefaultPassword` are configured in Develop
 Authenticated customers can create tickets and see only their own tickets. Agents can view their assigned work and the unassigned queue, claim an unassigned ticket, manage status, and add internal comments. Admins can assign agents and access all tickets. The API provides pagination, text search, status/priority/assignee filters, and created/updated/priority sorting.
 
 Use Swagger's **Authorize** button with the JWT returned by `/api/auth/login`, then use `/api/tickets` to work with the ticket lifecycle.
+
+## SLA automation
+
+Development data seeds active SLA policies: Critical (15 min response / 4 hr resolution), High (30 min / 8 hr), Medium (2 hr / 24 hr), and Low (8 hr / 72 hr). New tickets receive deadlines from their priority policy. A configurable hosted worker checks active tickets every 10 minutes, flags them at risk within 60 minutes of the earliest outstanding deadline, and records breach notifications for assigned agents and administrators. Configure the interval and warning threshold under `SlaMonitoring`.

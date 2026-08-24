@@ -12,6 +12,13 @@ public static class DevelopmentDataSeeder
         var password = configuration["Seed:DefaultPassword"];
         if (string.IsNullOrWhiteSpace(password)) return;
         await dbContext.Database.MigrateAsync(cancellationToken);
+        if (!await dbContext.SlaPolicies.AnyAsync(cancellationToken))
+        {
+            dbContext.SlaPolicies.AddRange(
+                SlaPolicy.Create("Critical", TicketPriority.Critical, 15, 240), SlaPolicy.Create("High", TicketPriority.High, 30, 480),
+                SlaPolicy.Create("Medium", TicketPriority.Medium, 120, 1440), SlaPolicy.Create("Low", TicketPriority.Low, 480, 4320));
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
         if (await dbContext.Users.AnyAsync(cancellationToken)) return;
         var hash = BCrypt.Net.BCrypt.HashPassword(password);
         dbContext.Users.AddRange(
