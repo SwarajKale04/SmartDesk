@@ -11,7 +11,7 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
         catch (Exception exception)
         {
             logger.LogError(exception, "Unhandled exception for request {RequestPath}", context.Request.Path);
-            var status = exception switch { ValidationException => StatusCodes.Status400BadRequest, ConflictException => StatusCodes.Status409Conflict, UnauthorizedException => StatusCodes.Status401Unauthorized, _ => StatusCodes.Status500InternalServerError };
+            var status = exception switch { ValidationException => StatusCodes.Status400BadRequest, ConflictException => StatusCodes.Status409Conflict, UnauthorizedException or UnauthorizedAccessException => StatusCodes.Status401Unauthorized, NotFoundException => StatusCodes.Status404NotFound, ForbiddenException => StatusCodes.Status403Forbidden, _ => StatusCodes.Status500InternalServerError };
             var title = status == StatusCodes.Status500InternalServerError ? "An unexpected error occurred." : exception.Message;
             var problem = new ProblemDetails { Status = status, Title = title };
             problem.Extensions["traceId"] = context.TraceIdentifier;

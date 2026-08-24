@@ -44,10 +44,61 @@ public sealed class Ticket : Entity
     public DateTimeOffset? DueAt { get; private set; }
     public DateTimeOffset? ResolvedAt { get; private set; }
     public DateTimeOffset? ClosedAt { get; private set; }
+
+    public static Ticket Create(string ticketNumber, string title, string description, Guid customerId, TicketPriority priority = TicketPriority.Medium)
+    {
+        if (string.IsNullOrWhiteSpace(ticketNumber)) throw new ArgumentException("Ticket number is required.", nameof(ticketNumber));
+        if (string.IsNullOrWhiteSpace(title)) throw new ArgumentException("Title is required.", nameof(title));
+        if (string.IsNullOrWhiteSpace(description)) throw new ArgumentException("Description is required.", nameof(description));
+        if (customerId == Guid.Empty) throw new ArgumentException("Customer is required.", nameof(customerId));
+        return new Ticket { TicketNumber = ticketNumber, Title = title.Trim(), Description = description.Trim(), CustomerId = customerId, Priority = priority };
+    }
+
+    public void ChangeStatus(TicketStatus status, DateTimeOffset now)
+    {
+        if (!IsValidTransition(Status, status)) throw new InvalidOperationException($"Cannot change ticket status from {Status} to {status}.");
+        Status = status;
+        UpdatedAt = now;
+        if (status == TicketStatus.Resolved) ResolvedAt = now;
+        if (status == TicketStatus.Closed) ClosedAt = now;
+        if (status == TicketStatus.Reopened) { ResolvedAt = null; ClosedAt = null; }
+    }
+
+    public void AssignTo(Guid agentId, DateTimeOffset now)
+    {
+        if (agentId == Guid.Empty) throw new ArgumentException("Agent is required.", nameof(agentId));
+        if (Status == TicketStatus.Closed) throw new InvalidOperationException("Closed tickets cannot be assigned.");
+        AssignedAgentId = agentId;
+        UpdatedAt = now;
+    }
+
+    public void UpdateDetails(string title, string description, TicketPriority priority, DateTimeOffset now)
+    {
+        if (Status == TicketStatus.Closed) throw new InvalidOperationException("Closed tickets cannot be modified.");
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(description)) throw new ArgumentException("Title and description are required.");
+        Title = title.Trim();
+        Description = description.Trim();
+        Priority = priority;
+        UpdatedAt = now;
+    }
+
+    private static bool IsValidTransition(TicketStatus from, TicketStatus to) => (from, to) switch
+    {
+        (TicketStatus.New, TicketStatus.Open) => true,
+        (TicketStatus.Open, TicketStatus.InProgress) => true,
+        (TicketStatus.InProgress, TicketStatus.WaitingForCustomer) => true,
+        (TicketStatus.WaitingForCustomer, TicketStatus.InProgress) => true,
+        (TicketStatus.InProgress, TicketStatus.Resolved) => true,
+        (TicketStatus.Resolved, TicketStatus.Closed) => true,
+        (TicketStatus.Resolved, TicketStatus.Reopened) => true,
+        (TicketStatus.Closed, TicketStatus.Reopened) => true,
+        (TicketStatus.Reopened, TicketStatus.InProgress) => true,
+        _ => false
+    };
 }
 
-public sealed class TicketComment : Entity { public Guid TicketId { get; private set; } public Guid UserId { get; private set; } public string Content { get; private set; } = string.Empty; public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public bool IsInternal { get; private set; } }
-public sealed class TicketHistory : Entity { public Guid TicketId { get; private set; } public Guid? UserId { get; private set; } public string Action { get; private set; } = string.Empty; public string? OldValue { get; private set; } public string? NewValue { get; private set; } public DateTimeOffset Timestamp { get; private set; } = DateTimeOffset.UtcNow; }
+public sealed class TicketComment : Entity { public Guid TicketId { get; private set; } public Guid UserId { get; private set; } public string Content { get; private set; } = string.Empty; public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public bool IsInternal { get; private set; } public static TicketComment Create(Guid ticketId, Guid userId, string content, bool isInternal) => string.IsNullOrWhiteSpace(content) ? throw new ArgumentException("Comment content is required.", nameof(content)) : new TicketComment { TicketId = ticketId, UserId = userId, Content = content.Trim(), IsInternal = isInternal }; }
+public sealed class TicketHistory : Entity { public Guid TicketId { get; private set; } public Guid? UserId { get; private set; } public string Action { get; private set; } = string.Empty; public string? OldValue { get; private set; } public string? NewValue { get; private set; } public DateTimeOffset Timestamp { get; private set; } = DateTimeOffset.UtcNow; public static TicketHistory Create(Guid ticketId, Guid? userId, string action, string? oldValue = null, string? newValue = null) => new() { TicketId = ticketId, UserId = userId, Action = action, OldValue = oldValue, NewValue = newValue }; }
 public sealed class Category : Entity { public string Name { get; private set; } = string.Empty; public string? Description { get; private set; } public bool IsActive { get; private set; } = true; }
 public sealed class SlaPolicy : Entity { public string Name { get; private set; } = string.Empty; public TicketPriority Priority { get; private set; } public int ResponseTimeMinutes { get; private set; } public int ResolutionTimeMinutes { get; private set; } public bool IsActive { get; private set; } = true; }
 public sealed class Notification : Entity { public Guid UserId { get; private set; } public string Type { get; private set; } = string.Empty; public string Message { get; private set; } = string.Empty; public Guid? RelatedTicketId { get; private set; } public bool IsRead { get; private set; } public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; }

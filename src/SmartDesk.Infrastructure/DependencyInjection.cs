@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using SmartDesk.Application.Authentication;
 using SmartDesk.Infrastructure.Authentication;
 using SmartDesk.Infrastructure.Persistence;
+using SmartDesk.Application.Tickets;
+using SmartDesk.Infrastructure.Tickets;
 
 namespace SmartDesk.Infrastructure;
 
@@ -16,6 +18,7 @@ public static class DependencyInjection
             services.AddDbContext<SmartDeskDbContext>(options => options.UseSqlServer(connectionString));
         services.AddOptions<JwtSettings>().Bind(configuration.GetSection(JwtSettings.SectionName));
         services.AddScoped<IAuthenticationService, AuthenticationService>();
+        services.AddScoped<ITicketService, TicketService>();
         return services;
     }
 }
