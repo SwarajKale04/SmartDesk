@@ -4,15 +4,19 @@ SmartDesk is an AI-augmented IT service desk built as a Clean Architecture modul
 
 ## Current status
 
-Phase 1 is complete: the .NET 8 solution, Clean Architecture projects, domain model, EF Core SQL Server persistence boundary, API bootstrap, structured logging, OpenAPI, CORS, centralized error handling, and health endpoints are in place.
+Phase 2 adds customer registration and login with BCrypt password hashing, short-lived JWT access tokens, and role claims for Customer, Agent, and Admin authorization.
 
 ## Run the API
 
-Set a SQL Server connection string outside source control before applying migrations in a later phase:
+Set secrets outside source control before starting the API:
 
 ```powershell
 $env:ConnectionStrings__SmartDesk = "Server=localhost,1433;Database=SmartDesk;User Id=sa;Password=<your-password>;TrustServerCertificate=True"
+$env:Jwt__SigningKey = "<at-least-32-random-characters>"
+$env:Seed__DefaultPassword = "<development-only-password>"
 dotnet run --project src/SmartDesk.API
 ```
 
 In Development, Swagger is available at `/swagger`; liveness and readiness endpoints are `/health` and `/health/ready`.
+
+When a database connection and `Seed__DefaultPassword` are configured in Development, the API applies migrations and creates the development users `admin@smartdesk.local`, `agent@smartdesk.local`, and `customer@smartdesk.local`. Registration is always Customer-only; agent/admin creation will be added to the admin workflow.

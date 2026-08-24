@@ -12,6 +12,14 @@ public sealed class User : Entity
     public string? Department { get; private set; }
     public bool IsActive { get; private set; } = true;
     public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow;
+
+    public static User Create(string name, string email, string passwordHash, UserRole role, string? department = null)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Name is required.", nameof(name));
+        if (string.IsNullOrWhiteSpace(email)) throw new ArgumentException("Email is required.", nameof(email));
+        if (string.IsNullOrWhiteSpace(passwordHash)) throw new ArgumentException("Password hash is required.", nameof(passwordHash));
+        return new User { Name = name.Trim(), Email = email.Trim().ToLowerInvariant(), PasswordHash = passwordHash, Role = role, Department = department?.Trim() };
+    }
 }
 
 public sealed class Ticket : Entity

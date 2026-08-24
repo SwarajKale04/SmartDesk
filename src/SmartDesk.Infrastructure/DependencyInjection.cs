@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SmartDesk.Application.Authentication;
+using SmartDesk.Infrastructure.Authentication;
 using SmartDesk.Infrastructure.Persistence;
 
 namespace SmartDesk.Infrastructure;
@@ -12,6 +14,8 @@ public static class DependencyInjection
         var connectionString = configuration.GetConnectionString("SmartDesk");
         if (!string.IsNullOrWhiteSpace(connectionString))
             services.AddDbContext<SmartDeskDbContext>(options => options.UseSqlServer(connectionString));
+        services.AddOptions<JwtSettings>().Bind(configuration.GetSection(JwtSettings.SectionName));
+        services.AddScoped<IAuthenticationService, AuthenticationService>();
         return services;
     }
 }
