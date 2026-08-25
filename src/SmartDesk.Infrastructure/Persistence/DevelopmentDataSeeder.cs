@@ -10,8 +10,12 @@ public static class DevelopmentDataSeeder
     public static async Task SeedAsync(SmartDeskDbContext dbContext, IConfiguration configuration, CancellationToken cancellationToken = default)
     {
         var password = configuration["Seed:DefaultPassword"];
-        if (string.IsNullOrWhiteSpace(password)) return;
         await dbContext.Database.MigrateAsync(cancellationToken);
+        if (!await dbContext.Categories.AnyAsync(cancellationToken))
+        {
+            dbContext.Categories.AddRange(new[] { "Hardware", "Software", "Network", "Account Access", "Security", "Email", "Infrastructure", "Other" }.Select(name => Category.Create(name)));
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
         if (!await dbContext.SlaPolicies.AnyAsync(cancellationToken))
         {
             dbContext.SlaPolicies.AddRange(
@@ -19,6 +23,7 @@ public static class DevelopmentDataSeeder
                 SlaPolicy.Create("Medium", TicketPriority.Medium, 120, 1440), SlaPolicy.Create("Low", TicketPriority.Low, 480, 4320));
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+        if (string.IsNullOrWhiteSpace(password)) return;
         if (await dbContext.Users.AnyAsync(cancellationToken)) return;
         var hash = BCrypt.Net.BCrypt.HashPassword(password);
         dbContext.Users.AddRange(

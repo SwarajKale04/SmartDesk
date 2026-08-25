@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SmartDesk.Domain.Entities;
 using SmartDesk.Domain.Enums;
 using SmartDesk.Infrastructure.Persistence;
+using SmartDesk.Application.Notifications;
 
 namespace SmartDesk.Infrastructure.Sla;
 
@@ -26,6 +27,7 @@ public sealed class SlaMonitoringService(IServiceScopeFactory scopeFactory, IOpt
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<SmartDeskDbContext>();
+        var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
         var now = DateTimeOffset.UtcNow;
         var threshold = now.AddMinutes(options.Value.AtRiskThresholdMinutes);
         var activeTickets = await dbContext.Tickets.Where(x => x.DueAt != null && x.Status != TicketStatus.Resolved && x.Status != TicketStatus.Closed && x.SlaStatus != SlaStatus.Breached).ToListAsync(cancellationToken);
@@ -37,11 +39,11 @@ public sealed class SlaMonitoringService(IServiceScopeFactory scopeFactory, IOpt
             if (!ticket.UpdateSlaStatus(target)) continue;
             dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, null, target == SlaStatus.Breached ? "SlaBreached" : target == SlaStatus.AtRisk ? "SlaAtRisk" : "SlaOnTrack"));
             if (ticket.AssignedAgentId is Guid agentId)
-                dbContext.Notifications.Add(Notification.Create(agentId, target == SlaStatus.Breached ? "SlaBreached" : "SlaAtRisk", $"Ticket {ticket.TicketNumber} is {target}.", ticket.Id));
+                await notificationService.NotifyAsync(agentId, target == SlaStatus.Breached ? "SlaBreached" : "SlaAtRisk", $"Ticket {ticket.TicketNumber} is {target}.", ticket.Id, cancellationToken);
             if (target == SlaStatus.Breached)
             {
                 var admins = await dbContext.Users.Where(x => x.Role == UserRole.Admin && x.IsActive).Select(x => x.Id).ToListAsync(cancellationToken);
-                dbContext.Notifications.AddRange(admins.Select(adminId => Notification.Create(adminId, "SlaBreached", $"Ticket {ticket.TicketNumber} breached its SLA.", ticket.Id)));
+                foreach (var adminId in admins) await notificationService.NotifyAsync(adminId, "SlaBreached", $"Ticket {ticket.TicketNumber} breached its SLA.", ticket.Id, cancellationToken);
             }
         }
         if (dbContext.ChangeTracker.HasChanges()) await dbContext.SaveChangesAsync(cancellationToken);

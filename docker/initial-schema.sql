@@ -293,3 +293,28 @@ GO
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260825181651_AddAiClassificationStatus'
+)
+BEGIN
+    ALTER TABLE [Tickets] ADD [AiClassificationStatus] nvarchar(40) NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20260825181651_AddAiClassificationStatus'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20260825181651_AddAiClassificationStatus', N'8.0.19');
+END;
+GO
+
+COMMIT;
+GO
+

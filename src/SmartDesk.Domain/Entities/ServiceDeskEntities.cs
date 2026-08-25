@@ -36,6 +36,7 @@ public sealed class Ticket : Entity
     public string? AiPredictedCategory { get; private set; }
     public TicketPriority? AiPredictedPriority { get; private set; }
     public bool AiReviewRequired { get; private set; }
+    public string? AiClassificationStatus { get; private set; }
     public Guid? SlaId { get; private set; }
     public SlaStatus SlaStatus { get; private set; } = SlaStatus.OnTrack;
     public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow;
@@ -106,6 +107,19 @@ public sealed class Ticket : Entity
         return true;
     }
 
+    public void ApplyAiClassification(string category, TicketPriority priority, decimal confidence, bool applyPrediction, bool reviewRequired)
+    {
+        AiPredictedCategory = category;
+        AiPredictedPriority = priority;
+        AiConfidence = confidence;
+        AiReviewRequired = reviewRequired;
+        AiClassificationStatus = reviewRequired ? "ReviewRequired" : applyPrediction ? "AutoApplied" : "NotApplied";
+        if (applyPrediction) Priority = priority;
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void SetCategory(Guid categoryId) => CategoryId = categoryId;
+
     private static bool IsValidTransition(TicketStatus from, TicketStatus to) => (from, to) switch
     {
         (TicketStatus.New, TicketStatus.Open) => true,
@@ -123,6 +137,6 @@ public sealed class Ticket : Entity
 
 public sealed class TicketComment : Entity { public Guid TicketId { get; private set; } public Guid UserId { get; private set; } public string Content { get; private set; } = string.Empty; public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public bool IsInternal { get; private set; } public static TicketComment Create(Guid ticketId, Guid userId, string content, bool isInternal) => string.IsNullOrWhiteSpace(content) ? throw new ArgumentException("Comment content is required.", nameof(content)) : new TicketComment { TicketId = ticketId, UserId = userId, Content = content.Trim(), IsInternal = isInternal }; }
 public sealed class TicketHistory : Entity { public Guid TicketId { get; private set; } public Guid? UserId { get; private set; } public string Action { get; private set; } = string.Empty; public string? OldValue { get; private set; } public string? NewValue { get; private set; } public DateTimeOffset Timestamp { get; private set; } = DateTimeOffset.UtcNow; public static TicketHistory Create(Guid ticketId, Guid? userId, string action, string? oldValue = null, string? newValue = null) => new() { TicketId = ticketId, UserId = userId, Action = action, OldValue = oldValue, NewValue = newValue }; }
-public sealed class Category : Entity { public string Name { get; private set; } = string.Empty; public string? Description { get; private set; } public bool IsActive { get; private set; } = true; }
+public sealed class Category : Entity { public string Name { get; private set; } = string.Empty; public string? Description { get; private set; } public bool IsActive { get; private set; } = true; public static Category Create(string name, string? description = null) => string.IsNullOrWhiteSpace(name) ? throw new ArgumentException("Category name is required.", nameof(name)) : new Category { Name = name.Trim(), Description = description?.Trim() }; }
 public sealed class SlaPolicy : Entity { public string Name { get; private set; } = string.Empty; public TicketPriority Priority { get; private set; } public int ResponseTimeMinutes { get; private set; } public int ResolutionTimeMinutes { get; private set; } public bool IsActive { get; private set; } = true; public static SlaPolicy Create(string name, TicketPriority priority, int responseTimeMinutes, int resolutionTimeMinutes) => responseTimeMinutes <= 0 || resolutionTimeMinutes <= 0 ? throw new ArgumentOutOfRangeException(nameof(responseTimeMinutes), "SLA time limits must be positive.") : new SlaPolicy { Name = name, Priority = priority, ResponseTimeMinutes = responseTimeMinutes, ResolutionTimeMinutes = resolutionTimeMinutes }; }
-public sealed class Notification : Entity { public Guid UserId { get; private set; } public string Type { get; private set; } = string.Empty; public string Message { get; private set; } = string.Empty; public Guid? RelatedTicketId { get; private set; } public bool IsRead { get; private set; } public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public static Notification Create(Guid userId, string type, string message, Guid? relatedTicketId = null) => new() { UserId = userId, Type = type, Message = message, RelatedTicketId = relatedTicketId }; }
+public sealed class Notification : Entity { public Guid UserId { get; private set; } public string Type { get; private set; } = string.Empty; public string Message { get; private set; } = string.Empty; public Guid? RelatedTicketId { get; private set; } public bool IsRead { get; private set; } public DateTimeOffset CreatedAt { get; private set; } = DateTimeOffset.UtcNow; public static Notification Create(Guid userId, string type, string message, Guid? relatedTicketId = null) => new() { UserId = userId, Type = type, Message = message, RelatedTicketId = relatedTicketId }; public void MarkRead() => IsRead = true; }

@@ -6,6 +6,10 @@ using SmartDesk.Domain.Enums;
 using SmartDesk.Infrastructure.Persistence;
 using SmartDesk.Infrastructure.Tickets;
 using SmartDesk.Infrastructure.Sla;
+using SmartDesk.Application.Ai;
+using SmartDesk.Application.Notifications;
+using SmartDesk.Infrastructure.Ai;
+using Microsoft.Extensions.Options;
 
 namespace SmartDesk.UnitTests;
 
@@ -15,7 +19,7 @@ public class TicketServiceTests
     public async Task CreateAsync_AsCustomer_ShouldCreateNewTicketAndHistory()
     {
         await using var dbContext = CreateDbContext();
-        var service = new TicketService(dbContext, new SlaCalculationService(dbContext));
+        var service = CreateService(dbContext);
         var customer = new CurrentUser(Guid.NewGuid(), UserRole.Customer);
 
         var result = await service.CreateAsync(new CreateTicketRequest("Cannot connect to VPN", "The VPN disconnects every five minutes.", TicketPriority.High), customer);
@@ -23,14 +27,15 @@ public class TicketServiceTests
         Assert.StartsWith("SD-", result.TicketNumber);
         Assert.Equal(TicketStatus.New, result.Status);
         Assert.Equal(TicketPriority.High, result.Priority);
-        Assert.Single(dbContext.TicketHistories);
+        Assert.Contains(dbContext.TicketHistories, history => history.Action == "TicketCreated");
+        Assert.Contains(dbContext.TicketHistories, history => history.Action == "AiClassified");
     }
 
     [Fact]
     public async Task ChangeStatusAsync_WithInvalidTransition_ShouldReturnValidationError()
     {
         await using var dbContext = CreateDbContext();
-        var service = new TicketService(dbContext, new SlaCalculationService(dbContext));
+        var service = CreateService(dbContext);
         var customer = new CurrentUser(Guid.NewGuid(), UserRole.Customer);
         var ticket = await service.CreateAsync(new CreateTicketRequest("Laptop issue", "The laptop will not start."), customer);
         var agent = User.Create("Agent", "agent@example.test", "hash", UserRole.Agent);
@@ -45,7 +50,7 @@ public class TicketServiceTests
     public async Task GetByIdAsync_AsDifferentCustomer_ShouldDenyAccess()
     {
         await using var dbContext = CreateDbContext();
-        var service = new TicketService(dbContext, new SlaCalculationService(dbContext));
+        var service = CreateService(dbContext);
         var owner = new CurrentUser(Guid.NewGuid(), UserRole.Customer);
         var ticket = await service.CreateAsync(new CreateTicketRequest("Email issue", "Outlook is not opening."), owner);
 
@@ -58,7 +63,7 @@ public class TicketServiceTests
         await using var dbContext = CreateDbContext();
         dbContext.SlaPolicies.Add(SlaPolicy.Create("High", TicketPriority.High, 30, 480));
         await dbContext.SaveChangesAsync();
-        var service = new TicketService(dbContext, new SlaCalculationService(dbContext));
+        var service = CreateService(dbContext);
 
         var ticket = await service.CreateAsync(new CreateTicketRequest("Production VPN failure", "Several users cannot establish a VPN session.", TicketPriority.High), new CurrentUser(Guid.NewGuid(), UserRole.Customer));
         var storedTicket = await dbContext.Tickets.SingleAsync(x => x.Id == ticket.Id);
@@ -70,4 +75,17 @@ public class TicketServiceTests
     }
 
     private static SmartDeskDbContext CreateDbContext() => new(new DbContextOptionsBuilder<SmartDeskDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    private static TicketService CreateService(SmartDeskDbContext dbContext) => new(dbContext, new SlaCalculationService(dbContext), new TestClassifier(), new NullNotificationService(), Options.Create(new AiClassificationOptions()));
+
+    private sealed class TestClassifier : ITicketClassificationService
+    {
+        public Task<TicketClassification> ClassifyAsync(string title, string description, CancellationToken cancellationToken = default) => Task.FromResult(new TicketClassification("Other", TicketPriority.Medium, 0.50m));
+    }
+
+    private sealed class NullNotificationService : INotificationService
+    {
+        public Task NotifyAsync(Guid userId, string type, string message, Guid? relatedTicketId = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<NotificationDto>> GetForUserAsync(Guid userId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<NotificationDto>>([]);
+        public Task MarkReadAsync(Guid notificationId, Guid userId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
 }

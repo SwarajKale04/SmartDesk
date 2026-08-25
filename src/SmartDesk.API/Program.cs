@@ -29,6 +29,7 @@ try
         });
     });
     builder.Services.AddHealthChecks();
+    builder.Services.AddSignalR();
     var jwtSection = builder.Configuration.GetSection("Jwt");
     var jwtSigningKey = jwtSection["SigningKey"];
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
@@ -54,6 +55,7 @@ try
     app.MapControllers();
     app.MapHealthChecks("/health");
     app.MapHealthChecks("/health/ready");
+    app.MapHub<SmartDesk.Infrastructure.Notifications.NotificationHub>("/hubs/notifications");
     app.Run();
 }
 catch (Microsoft.Extensions.Hosting.HostAbortedException) { }

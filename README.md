@@ -30,3 +30,7 @@ Use Swagger's **Authorize** button with the JWT returned by `/api/auth/login`, t
 ## SLA automation
 
 Development data seeds active SLA policies: Critical (15 min response / 4 hr resolution), High (30 min / 8 hr), Medium (2 hr / 24 hr), and Low (8 hr / 72 hr). New tickets receive deadlines from their priority policy. A configurable hosted worker checks active tickets every 10 minutes, flags them at risk within 60 minutes of the earliest outstanding deadline, and records breach notifications for assigned agents and administrators. Configure the interval and warning threshold under `SlaMonitoring`.
+
+## AI classification
+
+New tickets are classified through an ML.NET service into category and priority, with a stored confidence score. Predictions are auto-applied at 60% confidence or higher and marked for human review below 80%. Classification is resilient: a model failure records an audit event but does not prevent ticket creation. See [AI classification documentation](docs/ai-classification.md).

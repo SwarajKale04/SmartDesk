@@ -2,13 +2,17 @@ using Microsoft.EntityFrameworkCore;
 using SmartDesk.Application.Common;
 using SmartDesk.Application.Tickets;
 using SmartDesk.Application.Sla;
+using SmartDesk.Application.Ai;
+using SmartDesk.Application.Notifications;
 using SmartDesk.Domain.Entities;
 using SmartDesk.Domain.Enums;
 using SmartDesk.Infrastructure.Persistence;
+using SmartDesk.Infrastructure.Ai;
+using Microsoft.Extensions.Options;
 
 namespace SmartDesk.Infrastructure.Tickets;
 
-public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationService slaCalculationService) : ITicketService
+public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationService slaCalculationService, ITicketClassificationService classificationService, INotificationService notificationService, IOptions<AiClassificationOptions> aiOptions) : ITicketService
 {
     public async Task<TicketDto> CreateAsync(CreateTicketRequest request, CurrentUser currentUser, CancellationToken cancellationToken = default)
     {
@@ -16,6 +20,22 @@ public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationS
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.Description)) throw new ValidationException("Title and description are required.");
         if (request.Title.Length > 250 || request.Description.Length > 8000) throw new ValidationException("Ticket content exceeds the allowed length.");
         var ticket = Ticket.Create(await CreateNumberAsync(cancellationToken), request.Title, request.Description, currentUser.Id, request.Priority);
+        try
+        {
+            var classification = await classificationService.ClassifyAsync(request.Title, request.Description, cancellationToken);
+            var applyPrediction = classification.Confidence >= aiOptions.Value.ApplyConfidenceThreshold;
+            ticket.ApplyAiClassification(classification.Category, classification.Priority, classification.Confidence, applyPrediction, classification.Confidence < aiOptions.Value.ReviewConfidenceThreshold);
+            if (applyPrediction)
+            {
+                var category = await dbContext.Categories.AsNoTracking().SingleOrDefaultAsync(x => x.Name == classification.Category && x.IsActive, cancellationToken);
+                if (category is not null) ticket.SetCategory(category.Id);
+            }
+            dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "AiClassified", null, $"{classification.Category}/{classification.Priority}/{classification.Confidence:P0}"));
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "AiClassificationUnavailable"));
+        }
         var sla = await slaCalculationService.CalculateAsync(ticket.Priority, ticket.CreatedAt, cancellationToken);
         if (sla is not null)
         {
@@ -25,6 +45,8 @@ public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationS
         dbContext.Tickets.Add(ticket);
         dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "TicketCreated", null, ticket.Status.ToString()));
         await dbContext.SaveChangesAsync(cancellationToken);
+        var admins = await dbContext.Users.AsNoTracking().Where(x => x.Role == UserRole.Admin && x.IsActive).Select(x => x.Id).ToListAsync(cancellationToken);
+        foreach (var adminId in admins) await notificationService.NotifyAsync(adminId, "TicketCreated", $"New {ticket.Priority} ticket {ticket.TicketNumber} was created.", ticket.Id, cancellationToken);
         return Map(ticket);
     }
 
@@ -79,6 +101,7 @@ public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationS
             }
         }
         await dbContext.SaveChangesAsync(cancellationToken);
+        await notificationService.NotifyAsync(ticket.CustomerId, "TicketStatusChanged", $"Your ticket {ticket.TicketNumber} is now {ticket.Status}.", ticket.Id, cancellationToken);
         return Map(ticket);
     }
 
@@ -109,6 +132,7 @@ public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationS
         try { ticket.AssignTo(request.AgentId, DateTimeOffset.UtcNow); } catch (InvalidOperationException exception) { throw new ValidationException(exception.Message); }
         dbContext.TicketHistories.Add(TicketHistory.Create(ticket.Id, currentUser.Id, "AgentAssigned", previous, request.AgentId.ToString()));
         await dbContext.SaveChangesAsync(cancellationToken);
+        await notificationService.NotifyAsync(request.AgentId, "TicketAssigned", $"Ticket {ticket.TicketNumber} has been assigned to you.", ticket.Id, cancellationToken);
         return Map(ticket);
     }
 
@@ -126,6 +150,8 @@ public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationS
             dbContext.TicketHistories.Add(TicketHistory.Create(ticketId, currentUser.Id, "FirstResponseRecorded"));
         dbContext.TicketHistories.Add(TicketHistory.Create(ticketId, currentUser.Id, "CommentAdded", null, request.IsInternal ? "Internal" : "Public"));
         await dbContext.SaveChangesAsync(cancellationToken);
+        var recipient = currentUser.Role == UserRole.Customer ? ticket.AssignedAgentId : ticket.CustomerId;
+        if (recipient is Guid userId) await notificationService.NotifyAsync(userId, "TicketCommentAdded", $"A new comment was added to ticket {ticket.TicketNumber}.", ticket.Id, cancellationToken);
         return new TicketCommentDto(comment.Id, comment.UserId, comment.Content, comment.IsInternal, comment.CreatedAt);
     }
 
@@ -151,5 +177,5 @@ public sealed class TicketService(SmartDeskDbContext dbContext, ISlaCalculationS
         return number;
     }
 
-    private static TicketDto Map(Ticket ticket, IReadOnlyList<TicketCommentDto>? comments = null, IReadOnlyList<TicketHistoryDto>? history = null) => new(ticket.Id, ticket.TicketNumber, ticket.Title, ticket.Description, ticket.Priority, ticket.Status, ticket.CustomerId, ticket.AssignedAgentId, ticket.CreatedAt, ticket.UpdatedAt, comments, history);
+    private static TicketDto Map(Ticket ticket, IReadOnlyList<TicketCommentDto>? comments = null, IReadOnlyList<TicketHistoryDto>? history = null) => new(ticket.Id, ticket.TicketNumber, ticket.Title, ticket.Description, ticket.Priority, ticket.Status, ticket.CustomerId, ticket.AssignedAgentId, ticket.CreatedAt, ticket.UpdatedAt, comments, history, ticket.AiPredictedCategory, ticket.AiPredictedPriority, ticket.AiConfidence, ticket.AiReviewRequired, ticket.AiClassificationStatus);
 }
