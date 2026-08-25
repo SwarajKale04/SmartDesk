@@ -5,6 +5,8 @@ using SmartDesk.Application.Common;
 using SmartDesk.Domain.Enums;
 using SmartDesk.Infrastructure.Authentication;
 using SmartDesk.Infrastructure.Persistence;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace SmartDesk.UnitTests;
 
@@ -21,6 +23,8 @@ public class AuthenticationServiceTests
         Assert.Equal(UserRole.Customer, result.Role);
         Assert.Equal("ada@example.test", result.Email);
         Assert.NotEmpty(result.AccessToken);
+        var token = new JwtSecurityTokenHandler().ReadJwtToken(result.AccessToken);
+        Assert.Equal(result.UserId.ToString(), token.Claims.Single(x => x.Type == ClaimTypes.NameIdentifier).Value);
         Assert.Single(dbContext.Users);
     }
 

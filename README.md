@@ -34,3 +34,7 @@ Development data seeds active SLA policies: Critical (15 min response / 4 hr res
 ## AI classification
 
 New tickets are classified through an ML.NET service into category and priority, with a stored confidence score. Predictions are auto-applied at 60% confidence or higher and marked for human review below 80%. Classification is resilient: a model failure records an audit event but does not prevent ticket creation. See [AI classification documentation](docs/ai-classification.md).
+
+## Real-time notifications
+
+SignalR sends persisted ticket and SLA notifications to each authenticated user's private connection group. The notification inbox remains available through `GET /api/notifications` when a user is offline. See [the real-time client contract](docs/realtime-notifications.md).

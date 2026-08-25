@@ -32,13 +32,25 @@ try
     builder.Services.AddSignalR();
     var jwtSection = builder.Configuration.GetSection("Jwt");
     var jwtSigningKey = jwtSection["SigningKey"];
-    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true, ValidIssuer = jwtSection["Issuer"], ValidateAudience = true, ValidAudience = jwtSection["Audience"],
             ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey ?? string.Empty)), ValidateLifetime = true
-        });
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrWhiteSpace(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/hubs/notifications")) context.Token = accessToken;
+                return Task.CompletedTask;
+            }
+        };
+    });
     builder.Services.AddAuthorization();
-    builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"]).AllowAnyHeader().AllowAnyMethod()));
+    builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy.WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? ["http://localhost:5173"]).AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
     var app = builder.Build();
     if (app.Environment.IsDevelopment() && !string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("SmartDesk")))
     {
@@ -55,7 +67,7 @@ try
     app.MapControllers();
     app.MapHealthChecks("/health");
     app.MapHealthChecks("/health/ready");
-    app.MapHub<SmartDesk.Infrastructure.Notifications.NotificationHub>("/hubs/notifications");
+    app.MapHub<SmartDesk.Infrastructure.Notifications.NotificationHub>("/hubs/notifications").RequireAuthorization();
     app.Run();
 }
 catch (Microsoft.Extensions.Hosting.HostAbortedException) { }

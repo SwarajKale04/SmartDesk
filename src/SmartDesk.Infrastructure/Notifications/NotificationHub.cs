@@ -8,7 +8,12 @@ public sealed class NotificationHub : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        if (!string.IsNullOrWhiteSpace(Context.UserIdentifier)) await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{Context.UserIdentifier}");
+        if (string.IsNullOrWhiteSpace(Context.UserIdentifier))
+        {
+            Context.Abort();
+            return;
+        }
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{Context.UserIdentifier}");
         await base.OnConnectedAsync();
     }
 }
