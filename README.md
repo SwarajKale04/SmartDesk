@@ -38,3 +38,16 @@ New tickets are classified through an ML.NET service into category and priority,
 ## Real-time notifications
 
 SignalR sends persisted ticket and SLA notifications to each authenticated user's private connection group. The notification inbox remains available through `GET /api/notifications` when a user is offline. See [the real-time client contract](docs/realtime-notifications.md).
+
+## Frontend
+
+The React/Vite client lives in `frontend/smartdesk-web`. It provides customer, agent, and admin-aware dashboards, ticket lists and detail conversations, AI transparency, and a live notification inbox.
+
+```powershell
+cd frontend/smartdesk-web
+Copy-Item .env.example .env
+npm install
+npm run dev
+```
+
+Set `VITE_API_URL` when the API is not running at `http://localhost:5160/api`.
